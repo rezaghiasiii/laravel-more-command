@@ -1,6 +1,7 @@
 <?php
 namespace Theanik\LaravelMoreCommand\Commands;
 
+use Symfony\Component\Console\Input\InputOption;
 use Theanik\LaravelMoreCommand\Support\GenerateFile;
 use Theanik\LaravelMoreCommand\Support\FileGenerator;
 use Symfony\Component\Console\Input\InputArgument;
@@ -29,9 +30,17 @@ class CreateServiceCommand extends CommandGenerator
      * description
      * @var string
      */
-    protected $description = 'New service create command';
+    protected $description = 'Create a new service class';
 
-
+    /**
+     * __construct
+     *
+     * @return void
+     */
+    public function __construct()
+    {
+        parent::__construct();
+    }
 
     /**
      * Get command arguments - EX : UserService
@@ -45,18 +54,14 @@ class CreateServiceCommand extends CommandGenerator
             ['service', InputArgument::REQUIRED, 'The name of the service class.'],
         ];
     }
+    
 
-
-    /**
-     * __construct
-     *
-     * @return void
-     */
-    public function __construct()
+    protected function getOptions(): array
     {
-       parent::__construct();
+        return [
+            ['interface', 'i', InputOption::VALUE_NONE, 'Flag to create associated Interface', null]
+        ];
     }
-
 
     /**
      * Return Service name as convention
@@ -99,6 +104,28 @@ class CreateServiceCommand extends CommandGenerator
         return app_path() . $this->resolveNamespace() .'/Services'.'/'. $this->getServiceName() . '.php';
     }
 
+    /**
+     * Return Inference name for this service class
+     * getInterfaceName
+     *
+     * @return string
+     */
+    protected function getInterfaceName(): string
+    {
+        return $this->getServiceName() . "Interface";
+    }
+
+    /**
+     * Return destination path for interface file publish
+     * interfaceDestinationPath
+     *
+     * @return string
+     */
+    protected function interfaceDestinationPath(): string
+    {
+        return app_path() . $this->resolveNamespace() . "/Services/Interfaces" . '/' . $this->getInterfaceName() . '.php';
+    }
+    
 
     /**
      * Return only service class name
@@ -124,7 +151,31 @@ class CreateServiceCommand extends CommandGenerator
         return "$configNamespace\\Services";
     }
 
+    /**
+     * Return only service interface name
+     * getInterfaceNameWithoutNamespace
+     *
+     * @return string
+     */
+    private function getInterfaceNameWithoutNamespace(): string
+    {
+        return class_basename($this->getInterfaceName());
+    }
 
+
+    /**
+     * Set Default interface Namespace
+     * Override CommandGenerator class method
+     * getDefaultInterfaceNamespace
+     *
+     * @return string
+     */
+    public function getDefaultInterfaceNamespace(): string
+    {
+        $configNamespace = $this->getServiceNamespaceFromConfig();
+        return "$configNamespace\\Services\\Interfaces";
+    }
+    
     /**
      * Return stub file path
      * getStubFilePath
@@ -133,7 +184,13 @@ class CreateServiceCommand extends CommandGenerator
      */
     protected function getStubFilePath(): string
     {
-        return '/stubs/service.stub';
+        if ($this->option('interface') === true) {
+            $stub = '/stubs/service-interface.stub';
+        } else {
+            $stub = '/stubs/service.stub';
+        }
+
+        return $stub;
     }
 
 
@@ -147,10 +204,26 @@ class CreateServiceCommand extends CommandGenerator
     {
         return (new GenerateFile(__DIR__.$this->getStubFilePath(), [
             'CLASS_NAMESPACE'   => $this->getClassNamespace(),
-            'CLASS'             => $this->getServiceNameWithoutNamespace()
+            'INTERFACE_NAMESPACE' => $this->getInterfaceNamespace() . '\\' . $this->getInterfaceNameWithoutNamespace(),
+            'CLASS'             => $this->getServiceNameWithoutNamespace(),
+            'INTERFACE' => $this->getInterfaceNameWithoutNamespace()
         ]))->render();
     }
 
+    /**
+     * Generate interface file content
+     * getInterfaceTemplateContents
+     *
+     * @return string
+     */
+    protected function getInterfaceTemplateContents(): string
+    {
+        return (new GenerateFile(__DIR__ . "/stubs/interface.stub", [
+            'CLASS_NAMESPACE' => $this->getInterfaceNamespace(),
+            'INTERFACE' => $this->getInterfaceNameWithoutNamespace()
+        ]))->render();
+    }
+    
     /**
      * Execute the console command.
      *
@@ -166,10 +239,30 @@ class CreateServiceCommand extends CommandGenerator
 
         $contents = $this->getTemplateContents();
 
+        // For Interface
+        if ($this->option('interface') == true) {
+            $interfacePath = str_replace('\\', '/', $this->interfaceDestinationPath());
+
+            if (!$this->laravel['files']->isDirectory($dir = dirname($interfacePath))) {
+                $this->laravel['files']->makeDirectory($dir, 0777, true);
+            }
+
+            $interfaceContents = $this->getInterfaceTemplateContents();
+        }
+
         try {
             (new FileGenerator($path, $contents))->generate();
 
             $this->info("Created : {$path}");
+
+            // For Interface
+            if ($this->option('interface') === true) {
+
+                (new FileGenerator($interfacePath, $interfaceContents))->generate();
+
+                $this->info("Created : {$interfacePath}");
+            }
+
         } catch (\Exception $e) {
 
             $this->error("File : {$e->getMessage()}");

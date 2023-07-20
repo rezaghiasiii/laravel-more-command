@@ -31,7 +31,7 @@ class CreateRepositoryCommand extends CommandGenerator
      * description
      * @var string
      */
-    protected $description = 'Command description';
+    protected $description = 'Create a new repository class';
 
 
     /**
